@@ -16,7 +16,7 @@ from constants import (
     TEMPLATES, TIER_SPACING,
 )
 from utils import (
-    open_dialog, close_dialog, clamp, safe_int, safe_float,
+    clamp, safe_int, safe_float,
     parse_event_dt, event_applies_to_hive,
     hex_to_rgb, rgb_to_hex, is_dark_color, compute_hive_geometry,
     queen_age_years, queen_pin_color, queen_pin_border_color,
@@ -28,7 +28,6 @@ from charts import make_weight_chart
 from notifications import notification_loop
 
 Icons = getattr(ft, "Icons", None) or getattr(ft, "icons", None)
-
 
 
 def main(page: ft.Page):
@@ -45,11 +44,11 @@ def main(page: ft.Page):
     current_hid = None
     pending_photo = {"aid": None, "hid": None, "tid": None}
 
+    # --- Инициализация сервисов для Flet 1.0 ---
     file_picker = ft.FilePicker()
     page.services.append(file_picker)
 
-    date_picker = ft.DatePicker(first_date=datetime(2020, 1, 1),
-                                last_date=datetime(2035, 12, 31))
+    date_picker = ft.DatePicker(first_date=datetime(2020, 1, 1), last_date=datetime(2035, 12, 31))
     page.services.append(date_picker)
     date_cb = {"fn": None}
 
@@ -61,13 +60,36 @@ def main(page: ft.Page):
         "year": datetime.now().year,
         "month": datetime.now().month,
         "selected": datetime.now().strftime("%Y-%m-%d"),
-        "rot_outer": 0,
-        "rot_mid": 0,
-        "rot_inner": 0,
-        "rot_arrow": 0,
-        "active": None,
-        "last_angle": 0,
     }
+
+    # ================= ХЕЛПЕРЫ ДЛЯ ДИАЛОГОВ =================
+    def open_dialog(dlg):
+        if hasattr(page, "show_dialog"):
+            page.show_dialog(dlg)
+        else:
+            page.open(dlg)
+            page.update()
+
+    def close_dialog(dlg):
+        if hasattr(page, "close_dialog"):
+            page.close_dialog(dlg)
+        else:
+            page.close(dlg)
+            page.update()
+
+    def confirm_action(title, message, on_confirm):
+        def yes(e):
+            close_dialog(dlg)
+            on_confirm()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(title),
+            content=ft.Text(message),
+            actions=[
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dlg)),
+                ft.Button("Применить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=yes),
+            ])
+        open_dialog(dlg)
 
     # ================= PICKERS =================
     def open_date_picker(on_pick):
@@ -132,34 +154,18 @@ def main(page: ft.Page):
 
     # ================= PHOTOS =================
     async def pick_photo(e, aid, hid):
-        files = await file_picker.pick_files(
-            allow_multiple=False,
-            file_type=ft.FilePickerFileType.IMAGE,
-            dialog_title="Выберите фото улья"
-        )
+        files = await file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
         if not files: return
-        src = files[0].path
-        if not src: return
-        storage.save_photo(aid, hid, src)
-        if current_hid == hid and current_aid == aid:
-            show_hive_detail(aid, hid)
-        elif current_aid == aid:
-            show_apiary(aid)
+        storage.save_photo(aid, hid, files[0].path)
+        if current_hid == hid and current_aid == aid: show_hive_detail(aid, hid)
+        elif current_aid == aid: show_apiary(aid)
 
     async def pick_tier_photo(e, aid, hid, tid):
-        files = await file_picker.pick_files(
-            allow_multiple=False,
-            file_type=ft.FilePickerFileType.IMAGE,
-            dialog_title="Выберите фото яруса"
-        )
+        files = await file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
         if not files: return
-        src = files[0].path
-        if not src: return
-        storage.save_tier_photo(aid, hid, tid, src)
-        if current_hid == hid and current_aid == aid:
-            show_hive_detail(aid, hid)
-        elif current_aid == aid:
-            show_apiary(aid)
+        storage.save_tier_photo(aid, hid, tid, files[0].path)
+        if current_hid == hid and current_aid == aid: show_hive_detail(aid, hid)
+        elif current_aid == aid: show_apiary(aid)
 
     def clear_main_photo(aid, hid):
         storage.clear_photo(aid, hid)
@@ -172,11 +178,11 @@ def main(page: ft.Page):
         else: show_apiary(aid)
 
     # ================= BACKUP / RESTORE =================
-     async def export_backup(e):
+    async def export_backup(e):
         try:
-            # Сохраняем напрямую в папку "Загрузки" (Downloads), которую видит пользователь
+            # Сохраняем напрямую в папку "Загрузки", которую видит пользователь
             backup_dir = Path(page.get_downloads_directory())
-            save_path = backup_dir / "beekeeper_backup.zip"
+            save_path = backup_dir / f"beekeeper_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
             
             with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, dirs, files in os.walk(storage.data_root):
@@ -185,39 +191,23 @@ def main(page: ft.Page):
                         arcname = os.path.relpath(file_path, storage.data_root)
                         zipf.write(file_path, arcname)
             
-            page.show_dialog(ft.SnackBar(ft.Text(f"Резервная копия сохранена в папку Загрузки!")))
+            page.show_dialog(ft.SnackBar(ft.Text(f"Бэкап сохранен в Загрузки!")))
         except Exception as ex:
             page.show_dialog(ft.SnackBar(ft.Text(f"Ошибка бэкапа: {ex}")))
 
     async def import_backup(e):
-        files = await file_picker.pick_files(
-            allow_multiple=False,
-            file_type=ft.FilePickerFileType.CUSTOM,
-            allowed_extensions=["zip"],
-            dialog_title="Выберите резервную копию"
-        )
-        if not files: return
-        zip_path = files[0].path
-        
-        with zipfile.ZipFile(zip_path, 'r') as zipf:
-            zipf.extractall(storage.data_root)
-        
-        page.show_dialog(ft.SnackBar(ft.Text("Данные восстановлены!")))
-        show_welcome()
-
-    def confirm_action(title, message, on_confirm):
-        def yes(e):
-            close_dialog(page, dlg)
-            on_confirm()
-
-        dlg = ft.AlertDialog(
-            title=ft.Text(title),
-            content=ft.Text(message),
-            actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dlg)),
-                ft.Button("Применить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=yes),
-            ])
-        open_dialog(page, dlg)
+        try:
+            files = await file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=["zip"])
+            if not files: return
+            zip_path = files[0].path
+            
+            with zipfile.ZipFile(zip_path, 'r') as zipf:
+                zipf.extractall(storage.data_root)
+            
+            page.show_dialog(ft.SnackBar(ft.Text("Данные успешно восстановлены!")))
+            show_welcome()
+        except Exception as ex:
+            page.show_dialog(ft.SnackBar(ft.Text(f"Ошибка восстановления: {ex}")))
 
     # ================= WELCOME =================
     def show_welcome():
@@ -292,7 +282,7 @@ def main(page: ft.Page):
                 content=ft.Column([
                     ft.Icon(Icons.WIDGETS, size=64, color=HONEY),
                     ft.Text("Здесь пока пусто", size=18, text_align=ft.TextAlign.CENTER),
-                    ft.Text("Нажмите «+» в правом верхнем углу.\nУльи и весы можно перетаскивать.\nДолгое нажатие — быстрые действия.", color="#666666", text_align=ft.TextAlign.CENTER),
+                    ft.Text("Нажмите «+» в правом верхнем углу.\nУльи и весы можно перетаскивать.", color="#666666", text_align=ft.TextAlign.CENTER),
                 ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=12)))
             body.controls.append(ft.Container(expand=True, bgcolor=SOFT_YELLOW, border_radius=12, content=stack))
             page.update()
@@ -545,7 +535,7 @@ def main(page: ft.Page):
             except Exception as ex:
                 chart_block = ft.Container(padding=10, bgcolor="#FAFAFA", border_radius=10, content=ft.Text(f"Ошибка графика: {ex}", size=12, color=DANGER))
         else:
-            chart_block = ft.Container(padding=10, bgcolor="#FAFAFA", border_radius=10, content=ft.Text("📊 Нет данных о весе (в замерах на весах не выбран этот улей)", size=12, color="#999999", italic=True))
+            chart_block = ft.Container(padding=10, bgcolor="#FAFAFA", border_radius=10, content=ft.Text("📊 Нет данных о весе", size=12, color="#999999", italic=True))
 
         hive_events = [ev for ev in events if event_applies_to_hive(ev, hid)]
         hive_events.sort(key=lambda ev: (ev.get("date", ""), ev.get("time", "")))
@@ -826,23 +816,23 @@ def main(page: ft.Page):
         if not hive: return
 
         def edit_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_hive_dialog(aid, hive, hid, on_close=lambda: show_apiary(aid))
 
         def tiers_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_visual_tier_editor(aid, hid, on_close=lambda: show_apiary(aid))
 
         def color_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_color_dialog(aid, hid, on_close=lambda: show_apiary(aid))
 
         def event_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_event_dialog(aid, preselected_hives=[hid], default_date=cal_state["selected"])
 
         def delete_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             confirm_delete_hive(aid, hid)
 
         number_str = (hive.get("number") or "").strip()
@@ -857,8 +847,8 @@ def main(page: ft.Page):
                 ft.ListTile(leading=ft.Icon(Icons.CALENDAR_MONTH), title=ft.Text("Назначить событие"), on_click=event_action),
                 ft.ListTile(leading=ft.Icon(Icons.DELETE, color=DANGER), title=ft.Text("Удалить улей", color=DANGER), on_click=delete_action),
             ], tight=True, spacing=0),
-            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog))])
-        open_dialog(page, dialog)
+            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog))])
+        open_dialog(dialog)
 
     # ================= HIVE DETAIL =================
     def show_hive_detail(aid, hid):
@@ -968,7 +958,7 @@ def main(page: ft.Page):
 
             def do_save():
                 storage.update_hive(aid, hid, payload)
-                close_dialog(page, dialog)
+                close_dialog(dialog)
                 show_hive_detail(aid, hid)
 
             confirm_action("Сохранение", "Применить изменения параметра?", do_save)
@@ -977,10 +967,10 @@ def main(page: ft.Page):
             title=ft.Text(f"Изменить: {label}"),
             content=ft.Column([tf], tight=True),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Сохранить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=save_param),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     # ================= FAMILIES SECTION =================
     def build_families_section(aid, hid, hive):
@@ -1052,7 +1042,7 @@ def main(page: ft.Page):
             def do_save():
                 if is_edit: storage.update_family(aid, hid, family["id"], payload)
                 else: storage.add_family(aid, hid, payload)
-                close_dialog(page, dialog)
+                close_dialog(dialog)
                 show_hive_detail(aid, hid)
 
             confirm_action("Сохранение семьи", "Применить изменения?", do_save)
@@ -1061,25 +1051,25 @@ def main(page: ft.Page):
             title=ft.Text("Редактировать семью" if is_edit else "Новая семья"),
             content=ft.Column([age_field, state_field, notes_field], tight=True, spacing=8),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Сохранить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=save),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def confirm_delete_family(aid, hid, fid):
         def do_delete(e):
             storage.delete_family(aid, hid, fid)
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             show_hive_detail(aid, hid)
 
         dialog = ft.AlertDialog(
             title=ft.Text("Удалить семью?"),
             content=ft.Text("Данные о матке и семье будут удалены."),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Удалить", style=ft.ButtonStyle(bgcolor=DANGER, color="#FFFFFF"), on_click=do_delete),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     # ================= TIERS SECTION =================
     def build_tiers_section(aid, hid, hive):
@@ -1128,15 +1118,15 @@ def main(page: ft.Page):
 
     def open_tier_quick_actions(aid, hid, tier):
         def settings_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_tier_settings(aid, hid, tier)
 
         def photo_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             pick_tier_photo(e, aid, hid, tier["id"])
 
         def delete_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             confirm_delete_tier(aid, hid, tier["id"])
 
         dialog = ft.AlertDialog(
@@ -1146,8 +1136,8 @@ def main(page: ft.Page):
                 ft.ListTile(leading=ft.Icon(Icons.PHOTO_CAMERA), title=ft.Text("Загрузить/Заменить фото"), on_click=photo_action),
                 ft.ListTile(leading=ft.Icon(Icons.DELETE, color=DANGER), title=ft.Text("Удалить ярус", color=DANGER), on_click=delete_action),
             ], tight=True, spacing=0),
-            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog))])
-        open_dialog(page, dialog)
+            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog))])
+        open_dialog(dialog)
 
     def add_tier_clicked(aid, hid):
         def do_add():
@@ -1158,17 +1148,17 @@ def main(page: ft.Page):
     def confirm_delete_tier(aid, hid, tid):
         def do_del(e):
             storage.delete_tier(aid, hid, tid)
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             show_hive_detail(aid, hid)
 
         dialog = ft.AlertDialog(
             title=ft.Text("Удалить ярус?"),
             content=ft.Text("Это действие нельзя отменить."),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Удалить", style=ft.ButtonStyle(bgcolor=DANGER, color="#FFFFFF"), on_click=do_del),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     # ================= TIER SETTINGS =================
     def open_tier_settings(aid, hid, tier, on_close=None):
@@ -1176,7 +1166,7 @@ def main(page: ft.Page):
         if not hive: return
 
         def close_and_return():
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             if on_close: on_close()
             else: show_hive_detail(aid, hid)
 
@@ -1239,7 +1229,7 @@ def main(page: ft.Page):
                 ft.TextButton("Отмена", on_click=lambda e: close_and_return()),
                 ft.Button("Применить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=apply),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def open_color_dialog(aid, hid, on_close=None):
         hive = storage.get_hive(aid, hid)
@@ -1248,7 +1238,7 @@ def main(page: ft.Page):
         r0, g0, b0 = hex_to_rgb(current)
 
         def close_and_return():
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             if on_close: on_close()
             elif current_hid == hid: show_hive_detail(aid, hid)
             else: show_apiary(aid)
@@ -1300,7 +1290,7 @@ def main(page: ft.Page):
                 ft.TextButton("Отмена", on_click=lambda e: close_and_return()),
                 ft.Button("Применить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=apply),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     # ================= VISUAL TIER EDITOR =================
     def open_visual_tier_editor(aid, hid, on_close=None):
@@ -1519,13 +1509,13 @@ def main(page: ft.Page):
             actions=[ft.TextButton(
                 "Закрыть",
                 on_click=lambda e: (
-                    close_dialog(page, dialog),
+                    close_dialog(dialog),
                     on_close() if on_close else (
                         show_hive_detail(aid, hid) if current_hid == hid else show_apiary(aid)
                     )
                 ))],
         )
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     # ================= SCALE STATS =================
     def _stat_tile(title, value, color):
@@ -1619,7 +1609,7 @@ def main(page: ft.Page):
                 def do_rename(ev):
                     new_name = tf.value.strip() or "Весы"
                     storage.update_scale(aid, sid, {"name": new_name})
-                    close_dialog(page, rdialog)
+                    close_dialog(rdialog)
                     refresh()
                     page.update()
 
@@ -1627,10 +1617,10 @@ def main(page: ft.Page):
                     title=ft.Text("Переименовать весы"),
                     content=ft.Column([tf], tight=True),
                     actions=[
-                        ft.TextButton("Отмена", on_click=lambda ev: close_dialog(page, rdialog)),
+                        ft.TextButton("Отмена", on_click=lambda ev: close_dialog(rdialog)),
                         ft.Button("Сохранить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=do_rename),
                     ])
-                open_dialog(page, rdialog)
+                open_dialog(rdialog)
 
             scale_color = sc.get("color") or SCALE_DEFAULT_COLOR
             header = ft.Row([
@@ -1668,9 +1658,9 @@ def main(page: ft.Page):
         dialog = ft.AlertDialog(
             title=ft.Text(f"📊 {scale.get('name', 'Весы')}"),
             content=ft.Container(width=600, height=600, content=holder),
-            actions=[ft.TextButton("Закрыть", on_click=lambda e: close_dialog(page, dialog))],
+            actions=[ft.TextButton("Закрыть", on_click=lambda e: close_dialog(dialog))],
         )
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def open_measurement_dialog(aid, sid, mid, date_val, weight_val, on_save, current_hive_id=None):
         is_edit = mid is not None
@@ -1725,32 +1715,32 @@ def main(page: ft.Page):
                 storage.update_measurement(aid, sid, mid, date_field.value.strip(), w, selected_hive)
             else:
                 storage.add_measurement(aid, sid, date_field.value.strip(), w, selected_hive)
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             on_save()
 
         dialog = ft.AlertDialog(
             title=ft.Text("Редактировать замер" if is_edit else "Новый замер"),
             content=ft.Column([date_row, weight_field, hive_dropdown, attached_note], tight=True, spacing=8),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Сохранить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=save),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def confirm_delete_measurement(aid, sid, mid, on_confirm):
         def do_del(e):
             storage.delete_measurement(aid, sid, mid)
-            close_dialog(page, dlg)
+            close_dialog(dlg)
             on_confirm()
 
         dlg = ft.AlertDialog(
             title=ft.Text("Удалить замер?"),
             content=ft.Text("Это действие нельзя отменить."),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dlg)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dlg)),
                 ft.Button("Удалить", style=ft.ButtonStyle(bgcolor=DANGER, color="#FFFFFF"), on_click=do_del),
             ])
-        open_dialog(page, dlg)
+        open_dialog(dlg)
 
     # ================= SCALE QUICK ACTIONS =================
     def open_scale_quick_actions(aid, sid):
@@ -1760,11 +1750,11 @@ def main(page: ft.Page):
         is_attached = bool(scale.get("attached_hive_id"))
 
         def stats_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             show_scale_stats(aid, sid)
 
         def detach_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             hives = storage.list_hives(aid)
             hive = next((h for h in hives if h["id"] == scale.get("attached_hive_id")), None)
             if hive:
@@ -1778,43 +1768,43 @@ def main(page: ft.Page):
             show_apiary(aid)
 
         def rename_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             tf = ft.TextField(label="Название весов", value=scale.get("name", "Весы"), autofocus=True)
 
             def do_rename(ev):
                 new_name = tf.value.strip() or "Весы"
                 storage.update_scale(aid, sid, {"name": new_name})
-                close_dialog(page, rdialog)
+                close_dialog(rdialog)
                 show_apiary(aid)
 
             rdialog = ft.AlertDialog(
                 title=ft.Text("Переименовать весы"),
                 content=ft.Column([tf], tight=True),
                 actions=[
-                    ft.TextButton("Отмена", on_click=lambda ev: close_dialog(page, rdialog)),
+                    ft.TextButton("Отмена", on_click=lambda ev: close_dialog(rdialog)),
                     ft.Button("Сохранить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=do_rename),
                 ])
-            open_dialog(page, rdialog)
+            open_dialog(rdialog)
 
         def add_measurement_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_measurement_dialog(aid, sid, None, None, None, lambda: show_scale_stats(aid, sid))
 
         def delete_action(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             def do_del(ev):
                 storage.delete_scale(aid, sid)
-                close_dialog(page, ddel)
+                close_dialog(ddel)
                 show_apiary(aid)
 
             ddel = ft.AlertDialog(
                 title=ft.Text("Удалить весы?"),
                 content=ft.Text("Все замеры этих весов будут удалены."),
                 actions=[
-                    ft.TextButton("Отмена", on_click=lambda ev: close_dialog(page, ddel)),
+                    ft.TextButton("Отмена", on_click=lambda ev: close_dialog(ddel)),
                     ft.Button("Удалить", style=ft.ButtonStyle(bgcolor=DANGER, color="#FFFFFF"), on_click=do_del),
                 ])
-            open_dialog(page, ddel)
+            open_dialog(ddel)
 
         items = []
         if is_attached:
@@ -1832,8 +1822,8 @@ def main(page: ft.Page):
         dialog = ft.AlertDialog(
             title=ft.Text(f"Весы «{scale.get('name', 'Весы')}»{title_suffix}"),
             content=ft.Column(items, tight=True, spacing=0),
-            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog))])
-        open_dialog(page, dialog)
+            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog))])
+        open_dialog(dialog)
 
     def open_scale_dialog(aid):
         name_field = ft.TextField(label="Название весов", value=f"Весы {len(storage.list_scales(aid)) + 1}", autofocus=True)
@@ -1843,7 +1833,7 @@ def main(page: ft.Page):
 
             def do_save():
                 storage.add_scale(aid, {"name": name})
-                close_dialog(page, dialog)
+                close_dialog(dialog)
                 show_apiary(aid)
 
             confirm_action("Новые весы", f"Создать весы '{name}'?", do_save)
@@ -1852,10 +1842,10 @@ def main(page: ft.Page):
             title=ft.Text("Новые весы"),
             content=ft.Column([name_field], tight=True),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Создать", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=save),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     # ================= CALENDAR (ОБЫЧНАЯ СЕТКА) =================
     def show_calendar(aid):
@@ -2043,11 +2033,11 @@ def main(page: ft.Page):
             actions=[
                 ft.TextButton("Копировать номер", on_click=copy_phone),
                 ft.TextButton("Копировать текст", on_click=copy_text),
-                ft.TextButton("Закрыть", on_click=lambda e: close_dialog(page, dlg)),
+                ft.TextButton("Закрыть", on_click=lambda e: close_dialog(dlg)),
                 ft.Button("WhatsApp", on_click=open_whatsapp, style=ft.ButtonStyle(bgcolor="#25D366", color="#FFFFFF")),
                 ft.Button("SMS", on_click=open_sms, style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF")),
             ])
-        open_dialog(page, dlg)
+        open_dialog(dlg)
 
     # ================= APIARY/HIVE/EVENT DIALOGS =================
     def open_create_apiary():
@@ -2058,7 +2048,7 @@ def main(page: ft.Page):
             name = name_field.value.strip() or default_name
             def do_save():
                 storage.create_apiary(name)
-                close_dialog(page, dialog)
+                close_dialog(dialog)
                 show_welcome()
             confirm_action("Создание пасеки", f"Создать пасеку '{name}'?", do_save)
 
@@ -2066,22 +2056,22 @@ def main(page: ft.Page):
             title=ft.Text("Создать пасеку"),
             content=ft.Column([name_field], tight=True),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Создать", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=save),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def open_add_menu(aid):
         def create_hive(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_hive_dialog(aid)
 
         def create_scale(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             open_scale_dialog(aid)
 
         def add_tier(e):
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             choose_hive_for_tier(aid)
 
         hive_card = ft.Container(
@@ -2114,8 +2104,8 @@ def main(page: ft.Page):
         dialog = ft.AlertDialog(
             title=ft.Text("Что добавить?"),
             content=ft.Row([hive_card, scale_card, tier_card], spacing=12, alignment=ft.MainAxisAlignment.CENTER),
-            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog))])
-        open_dialog(page, dialog)
+            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog))])
+        open_dialog(dialog)
 
     def choose_hive_for_tier(aid):
         hives = storage.list_hives(aid)
@@ -2123,14 +2113,14 @@ def main(page: ft.Page):
             dlg = ft.AlertDialog(
                 title=ft.Text("Нет ульев"),
                 content=ft.Text("Сначала добавьте хотя бы один улей."),
-                actions=[ft.TextButton("OK", on_click=lambda e: close_dialog(page, dlg))])
-            open_dialog(page, dlg)
+                actions=[ft.TextButton("OK", on_click=lambda e: close_dialog(dlg))])
+            open_dialog(dlg)
             return
 
         def add_to(hid):
             def do_add():
                 storage.add_tier(aid, hid)
-                close_dialog(page, dialog)
+                close_dialog(dialog)
                 show_apiary(aid)
             confirm_action("Добавление яруса", "Добавить новый ярус к этому улью?", do_add)
 
@@ -2157,8 +2147,8 @@ def main(page: ft.Page):
         dialog = ft.AlertDialog(
             title=ft.Text("К какому улью добавить ярус?"),
             content=ft.Container(content=grid, width=460, height=360),
-            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog))])
-        open_dialog(page, dialog)
+            actions=[ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog))])
+        open_dialog(dialog)
 
     def open_hive_dialog(aid, hive=None, hid=None, on_close=None):
         is_edit = hive is not None
@@ -2180,13 +2170,13 @@ def main(page: ft.Page):
             def do_save():
                 if is_edit:
                     storage.update_hive(aid, hid, payload)
-                    close_dialog(page, dialog)
+                    close_dialog(dialog)
                     if on_close: on_close()
                     elif current_hid == hid: show_hive_detail(aid, hid)
                     else: show_apiary(aid)
                 else:
                     storage.add_hive(aid, payload)
-                    close_dialog(page, dialog)
+                    close_dialog(dialog)
                     if on_close: on_close()
                     else: show_apiary(aid)
 
@@ -2198,25 +2188,25 @@ def main(page: ft.Page):
                 width=380, height=520,
                 content=ft.Column([number, size, frames, notes], tight=True, scroll=ft.ScrollMode.AUTO, spacing=8)),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Сохранить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=save),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def confirm_delete_hive(aid, hid):
         def do_delete(e):
             storage.delete_hive(aid, hid)
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             show_apiary(aid)
 
         dialog = ft.AlertDialog(
             title=ft.Text("Удалить улей?"),
             content=ft.Text("Это действие нельзя отменить."),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Удалить", style=ft.ButtonStyle(bgcolor=DANGER, color="#FFFFFF"), on_click=do_delete),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def open_event_dialog(aid, event=None, eid=None, preselected_hives=None, default_date=None):
         is_edit = event is not None
@@ -2320,7 +2310,7 @@ def main(page: ft.Page):
                     storage.update_event(aid, eid, payload)
                 else:
                     storage.add_event(aid, payload)
-                close_dialog(page, dialog)
+                close_dialog(dialog)
                 if preselected_hives and len(preselected_hives) == 1:
                     show_hive_detail(aid, preselected_hives[0])
                 else:
@@ -2338,15 +2328,15 @@ def main(page: ft.Page):
                     title, date_row, time_row, phone, notes, hives_selector,
                 ], tight=True, scroll=ft.ScrollMode.AUTO, spacing=8)),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Сохранить", style=ft.ButtonStyle(bgcolor=HONEY, color="#FFFFFF"), on_click=save),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     def confirm_delete_event(aid, eid):
         def do_delete(e):
             storage.delete_event(aid, eid)
-            close_dialog(page, dialog)
+            close_dialog(dialog)
             if current_hid: show_hive_detail(aid, current_hid)
             else: show_calendar(aid)
 
@@ -2354,10 +2344,10 @@ def main(page: ft.Page):
             title=ft.Text("Удалить событие?"),
             content=ft.Text("Это действие нельзя отменить."),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: close_dialog(page, dialog)),
+                ft.TextButton("Отмена", on_click=lambda e: close_dialog(dialog)),
                 ft.Button("Удалить", style=ft.ButtonStyle(bgcolor=DANGER, color="#FFFFFF"), on_click=do_delete),
             ])
-        open_dialog(page, dialog)
+        open_dialog(dialog)
 
     # ================= RESIZE =================
     _resize_state = {"timer": None, "last_size": (None, None)}
