@@ -62,20 +62,12 @@ def main(page: ft.Page):
         "selected": datetime.now().strftime("%Y-%m-%d"),
     }
 
-    # ================= ХЕЛПЕРЫ ДЛЯ ДИАЛОГОВ =================
+    # ================= ХЕЛПЕРЫ ДЛЯ ДИАЛОГОВ (Flet 1.0) =================
     def open_dialog(dlg):
-        if hasattr(page, "show_dialog"):
-            page.show_dialog(dlg)
-        else:
-            page.open(dlg)
-            page.update()
+        page.show_dialog(dlg)
 
     def close_dialog(dlg):
-        if hasattr(page, "close_dialog"):
-            page.close_dialog(dlg)
-        else:
-            page.close(dlg)
-            page.update()
+        page.close_dialog(dlg)
 
     def confirm_action(title, message, on_confirm):
         def yes(e):
@@ -94,11 +86,7 @@ def main(page: ft.Page):
     # ================= PICKERS =================
     def open_date_picker(on_pick):
         date_cb["fn"] = on_pick
-        try:
-            page.open(date_picker)
-        except AttributeError:
-            date_picker.open = True
-            page.update()
+        page.open(date_picker)
 
     def handle_date_change(e):
         v = date_picker.value
@@ -106,21 +94,13 @@ def main(page: ft.Page):
         if not isinstance(v, str): v = v.strftime("%Y-%m-%d")
         cb = date_cb["fn"]
         if cb: cb(v)
-        try:
-            page.close(date_picker)
-        except AttributeError:
-            date_picker.open = False
-            page.update()
+        page.close(date_picker)
 
     date_picker.on_change = handle_date_change
 
     def open_time_picker(on_pick):
         time_cb["fn"] = on_pick
-        try:
-            page.open(time_picker)
-        except AttributeError:
-            time_picker.open = True
-            page.update()
+        page.open(time_picker)
 
     def handle_time_change(e):
         v = time_picker.value
@@ -131,21 +111,13 @@ def main(page: ft.Page):
             if len(s) > 5: s = s[:5]
         cb = time_cb["fn"]
         if cb: cb(s)
-        try:
-            page.close(time_picker)
-        except AttributeError:
-            time_picker.open = False
-            page.update()
+        page.close(time_picker)
 
     time_picker.on_change = handle_time_change
 
     def copy_to_clipboard(text):
         try:
-            if hasattr(page, "run_task"):
-                page.run_task(page.set_clipboard, text)
-            else:
-                import asyncio
-                asyncio.ensure_future(page.set_clipboard(text))
+            page.run_task(page.set_clipboard, text)
         except Exception as ex:
             print(f"copy error: {ex}")
 
@@ -180,7 +152,6 @@ def main(page: ft.Page):
     # ================= BACKUP / RESTORE =================
     async def export_backup(e):
         try:
-            # Сохраняем напрямую в папку "Загрузки", которую видит пользователь
             backup_dir = Path(page.get_downloads_directory())
             save_path = backup_dir / f"beekeeper_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
             
