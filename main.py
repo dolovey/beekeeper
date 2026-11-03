@@ -2011,16 +2011,31 @@ def main(page: ft.Page):
         open_dialog(dlg)
 
     # ================= APIARY/HIVE/EVENT DIALOGS =================
-    def open_create_apiary():
+        def open_create_apiary():
         default_name = f"Пасека {len(storage.list_apiaries()) + 1}"
         name_field = ft.TextField(label="Название", value=default_name, autofocus=True)
 
         def save(e):
             name = name_field.value.strip() or default_name
             def do_save():
-                storage.create_apiary(name)
-                close_dialog(dialog)
-                show_welcome()
+                try:
+                    # Пытаемся создать пасеку
+                    storage.create_apiary(name)
+                    
+                    # Пытаемся закрыть старое окно
+                    close_dialog(dialog)
+                    
+                    # Перерисовываем главный экран
+                    show_welcome()
+                except Exception as ex:
+                    # Если что-то пошло не так — показываем окно с ошибкой
+                    err_dlg = ft.AlertDialog(
+                        title=ft.Text("Ошибка создания"),
+                        content=ft.Text(f"Детали: {ex}\n\nПопробуйте перезапустить приложение."),
+                        actions=[ft.TextButton("OK", on_click=lambda e: close_dialog(err_dlg))]
+                    )
+                    open_dialog(err_dlg)
+
             confirm_action("Создание пасеки", f"Создать пасеку '{name}'?", do_save)
 
         dialog = ft.AlertDialog(
