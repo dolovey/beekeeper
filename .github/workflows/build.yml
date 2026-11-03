@@ -6,39 +6,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Set up Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools'
-          accept-android-sdk-licenses: true
-          
-      - name: Accept Android SDK Licenses
-        run: yes | sdkmanager --licenses || true
-          
-      - name: Install Flet
-        run: pip install flet==1.0.5
-        
-      # 1. Очищаем старые артефакты сборки (на всякий случай)
-      - name: Clean previous build
-        run: flet clean
-        
-      # 2. Собираем APK с явным указанием Python 3.12
+
+      # 1. Официальное действие Flet для сборки (самый надёжный способ)
       - name: Build APK
-        run: echo "y" | flet build apk --python-version 3.12
-        
+        id: build
+        uses: flet-dev/flet-build-action@v1
+        with:
+          target: apk
+          runner-python-version: "3.12"
+          bundled-python-version: "3.12"
+
+      # 2. Загрузка готового файла
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: beekeeper-apk
-          path: '**/*.apk'
+          path: ${{ steps.build.outputs.archive-path }}
+          archive: false
+          if-no-files-found: error
