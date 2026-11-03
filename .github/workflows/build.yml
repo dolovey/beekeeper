@@ -1,0 +1,19 @@
+name: Build APK
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install Flet
+        run: pip install flet==0.28.3
+      - name: Build APK
+        run: flet build apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: beekeeper-apk
+          path: build/apk/app-release.apk
