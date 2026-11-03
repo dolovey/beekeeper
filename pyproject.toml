@@ -12,7 +12,7 @@ org = "com.daniil"
 product = "Beekeeper"
 company = "Daniil"
 copyright = "Copyright (c) 2026 Daniil"
-icon = "assets/icon.png"
+icon = "icon.png"
 
 [tool.flet.app]
 path = "."
