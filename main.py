@@ -172,22 +172,22 @@ def main(page: ft.Page):
         else: show_apiary(aid)
 
     # ================= BACKUP / RESTORE =================
-    async def export_backup(e):
-        temp_zip = Path(page.get_application_documents_directory()) / "beekeeper_backup.zip"
-        with zipfile.ZipFile(temp_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(storage.data_root):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, storage.data_root)
-                    zipf.write(file_path, arcname)
-        
-        save_path = await file_picker.save_file(
-            file_name="beekeeper_backup.zip",
-            allowed_extensions=["zip"]
-        )
-        if save_path:
-            shutil.copy2(temp_zip, save_path)
-            page.show_dialog(ft.SnackBar(ft.Text("Резервная копия сохранена!")))
+     async def export_backup(e):
+        try:
+            # Сохраняем напрямую в папку "Загрузки" (Downloads), которую видит пользователь
+            backup_dir = Path(page.get_downloads_directory())
+            save_path = backup_dir / "beekeeper_backup.zip"
+            
+            with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(storage.data_root):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, storage.data_root)
+                        zipf.write(file_path, arcname)
+            
+            page.show_dialog(ft.SnackBar(ft.Text(f"Резервная копия сохранена в папку Загрузки!")))
+        except Exception as ex:
+            page.show_dialog(ft.SnackBar(ft.Text(f"Ошибка бэкапа: {ex}")))
 
     async def import_backup(e):
         files = await file_picker.pick_files(
