@@ -30,6 +30,7 @@ from notifications import notification_loop
 Icons = getattr(ft, "Icons", None) or getattr(ft, "icons", None)
 
 
+
 def main(page: ft.Page):
     page.title = "Пчеловод"
     page.theme_mode = ft.ThemeMode.LIGHT
