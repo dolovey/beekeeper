@@ -17,22 +17,25 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           
-      # 1. Обновляем setup-android до v4 и явно указываем пакеты
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools'
           accept-android-sdk-licenses: true
           
-      # 2. Дополнительно принимаем все лицензии (на всякий случай)
       - name: Accept Android SDK Licenses
         run: yes | sdkmanager --licenses || true
           
       - name: Install Flet
         run: pip install flet==1.0.5
         
+      # 1. Очищаем старые артефакты сборки (на всякий случай)
+      - name: Clean previous build
+        run: flet clean
+        
+      # 2. Собираем APK с явным указанием Python 3.12
       - name: Build APK
-        run: echo "y" | flet build apk
+        run: echo "y" | flet build apk --python-version 3.12
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
