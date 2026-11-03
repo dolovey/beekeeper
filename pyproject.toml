@@ -1,0 +1,23 @@
+[project]
+name = "beekeeper"
+version = "1.0.0"
+description = "Приложение для пчеловодов"
+requires-python = ">=3.9"
+dependencies = [
+    "flet",
+]
+
+[tool.flet]
+org = "com.daniil"
+product = "Beekeeper"
+company = "Daniil"
+copyright = "Copyright (c) 2026 Daniil"
+icon = "assets/icon.png"
+
+[tool.flet.app]
+path = "."
+
+[tool.flet.android.permission]
+"android.permission.CAMERA" = true
+"android.permission.READ_EXTERNAL_STORAGE" = true
+"android.permission.WRITE_EXTERNAL_STORAGE" = true
