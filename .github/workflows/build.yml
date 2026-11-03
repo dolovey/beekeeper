@@ -16,4 +16,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: beekeeper-apk
-          path: build/apk/app-release.apk
+          path: '**/*.apk'
