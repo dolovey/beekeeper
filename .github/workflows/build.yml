@@ -11,28 +11,29 @@ jobs:
         with:
           python-version: '3.11'
       
-      # 1. Настраиваем Java (нужна для Android SDK)
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
           
-      # 2. Устанавливаем Android SDK и сразу принимаем все лицензии
+      # 1. Обновляем setup-android до v4 и явно указываем пакеты
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
+          packages: 'platform-tools'
           accept-android-sdk-licenses: true
           
-      # 3. Устанавливаем Flet
+      # 2. Дополнительно принимаем все лицензии (на всякий случай)
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+          
       - name: Install Flet
         run: pip install flet==1.0.5
         
-      # 4. Собираем APK
       - name: Build APK
         run: echo "y" | flet build apk
         
-      # 5. Загружаем готовый файл
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
