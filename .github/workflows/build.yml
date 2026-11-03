@@ -9,7 +9,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install Flet
-        run: pip install flet==0.28.3
+        run: pip install flet==1.0.5
       - name: Build APK
         run: flet build apk
       - name: Upload APK
