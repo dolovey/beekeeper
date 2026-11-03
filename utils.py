@@ -5,20 +5,27 @@ from constants import TIER_SPACING
 
 
 def open_dialog(page, d):
-    try:
-        page.open(d)
-    except AttributeError:
-        page.dialog = d
-        d.open = True
-        page.update()
-
+    if hasattr(page, "show_dialog"):
+        page.show_dialog(d)
+    else:
+        try:
+            page.open(d)
+            page.update()
+        except AttributeError:
+            page.dialog = d
+            d.open = True
+            page.update()
 
 def close_dialog(page, d):
-    try:
-        page.close(d)
-    except AttributeError:
-        d.open = False
-        page.update()
+    if hasattr(page, "close_dialog"):
+        page.close_dialog(d)
+    else:
+        try:
+            page.close(d)
+            page.update()
+        except AttributeError:
+            d.open = False
+            page.update()
 
 
 def clamp(v, lo, hi):
